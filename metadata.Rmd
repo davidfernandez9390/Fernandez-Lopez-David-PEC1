@@ -1,0 +1,64 @@
+---
+title: "Metadata"
+author: "David Fernández"
+date: "2024-11-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Metadata de les dades:
+
+Fulla DATA:
+
+Columnes M1 ... M149 descriuen les concentracions de metabòlits
+Columna SampleType indica si la mostra es mostra d'estudi o pooled QC.
+Columna Class indica la característica clínicaGC = Gastric Cancer , BN = Benign Tumor , HE = Healthy Control
+
+
+```{r}
+
+library(readxl)
+GastricCancer_NMR <- read_excel("metaboData-main/metaboData-main/Datasets/2023-CIMCBTutorial/GastricCancer_NMR.xlsx")
+View(GastricCancer_NMR)
+
+
+
+# Com ens diu en la web que descriu dataset, carreguem cadascun dels dos fulls d'excel en dues variables diferents (però ho fem en R):
+
+# Carreguem la primera fulla (Data):
+data <- read_excel("metaboData-main/metaboData-main/Datasets/2023-CIMCBTutorial/GastricCancer_NMR.xlsx", sheet = "Data")
+
+# Carreguem la segona fulla (Peak):
+peak <- read_excel("metaboData-main/metaboData-main/Datasets/2023-CIMCBTutorial/GastricCancer_NMR.xlsx", sheet = "Peak")
+
+# Seleccionem del data.frame "data" les columnes que necessitem emprant %>% i la funció select():
+sample_metadata <- data %>%
+  select(SampleID, SampleType, Class) 
+
+rownames(sample_metadata) <- data$SampleID
+
+# Veiem com queda la taula (que només ha de tenir 3 columnes)
+head(sample_metadata)
+```
+
+Fulla Peak:
+Mostra bàsicament el nom real de cada metabòlit 
+
+```{r}
+#sleccionem totes les columnes (menys la primera, índex, que no aporta res)
+metabolite_metadata <- peak %>%
+  select(Label, Name, Perc_missing, QC_RSD) %>%
+  as.data.frame()
+
+# Fem que les files tinguin el mateix nom que a la matriu (és a dir el Name)
+rownames(metabolite_metadata) <- metabolite_metadata$Name
+
+# Consultem com queda la taula
+metabolite_metadata
+
+
+
+```
