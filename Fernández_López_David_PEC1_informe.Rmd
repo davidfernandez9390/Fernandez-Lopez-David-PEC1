@@ -1,0 +1,439 @@
+---
+title: "Fernández_López_David_PEC1_informe"
+author: "David Fernández"
+date: "2024-11-06"
+output:
+  word_document: default
+  toc: true
+  toc_depth: 2
+  html_document: null
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Abstract
+
+En aquest treball es presenta l'anàlisi d'un dataset de dades metabolòmiques 2023-CIMBCTutorial descarregat del repositori github: (<https://github.com/nutrimetabolomics/metaboData/>). En aquest es duen a terme alguns anàlisis que permeten observar les diferències entre els metabòlits de les mostres segons el grup i també per veure com es relacionen entre sí.
+
+## Objectius de l'estudi
+
+L'objetiu d'aquest treball és explorar les dades d'un dataset per poder dur a terme una visió general de com s'estructuren les dades i si es poden trobar algunes diferències entre els grups de mostres a partir d'anàlisis multivariants com l'anàlisi de components principals.
+
+A part, també es preten familiaritzar-se amb la creació i manipulació de contenidors de tipus SummarizedExperiment i també la creació de repositoris Github així com també treballar en el propi entorn de R.
+
+## Materials i mètodes
+
+### Selecció del dataset
+
+D'entre els datasets proporcionats en el repositori de Github, es treballarà amb el Dataset usat al tutorial CIMBC ["Basic Metabolomics Data Analysis Workflow"](https://cimcb.github.io/MetabWorkflowTutorial/Tutorial1.html).
+
+Primer entrem al repositori de github (<https://github.com/nutrimetabolomics/metaboData/>) i ens trobem amb el votó verd de "code" d'on podem agafar l'enllaç. Llavors, obrim R i podem clonar-lo accedint a File \> New Project i un cop aquí ens surt una pantalla on seleccionem "Version Control" i llavors seleccionem "Git" on enganxarem el link que hem copiat del repositori.
+
+Ara, a la barra lateral ens surten tots els arxius disponibles. Podem veure una carpeta que diu "Datasets" i dins en trobem diferents.
+
+Aquestes dades corresponen a les concentracions de metabòlits en diferents tipus de mostres (individus) que es poden categoritzar per classes, com sans i amb càncer gàstric, entre altres.
+
+Les dades de l'estudi es troben en un fitxer .xlsx que conté dues fulles. En la primera fulla (Data) podem trobar els valors de les concentracions de diferents metabòlits per les diferents mostres, que també tenen altres dades com el tipus o classe de mostra i el seu identificador. En la segona (Peak) podem trobar la metadata associada a les pròpies variables, com per exemple el nom complet de cada metabòlit
+
+### Eines informàtiques
+
+El treball es realitza en un markdown de R studio. Per poder manipular les dades se'ns demana poder crear un contenidor de tipus SummarizedExperiment de Bioconductor. Per fer-ho agafem el codi que podem trobar a la web de Bioconductor: <https://bioconductor.org/packages/release/bioc/html/SummarizedExperiment.html>
+
+```{r cars}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("SummarizedExperiment")
+```
+
+Per altra banda, també necessitem altres paquets per poder treballar, per exemple amb gràfics o bé per llegir les dades:
+
+Un cop hem descarregat el paquet, necessitem carregar-lo:
+
+```{r}
+library(SummarizedExperiment)
+
+# També carreguem readxl per llegir el fitxer excel
+library(readxl)
+
+# I el dplyr per fer algunes operacions (com el pipe %>% o el select)
+library(dplyr)
+```
+
+### Creació del contenidor de tipus SummarizedExperiment:
+
+En escollir el dataset "2023-CIMCBTutorial" podem veure com dins hi ha un arxiu .xlsx que haurem de llegir mitjançant read_excel (carregant primer el readxl). Podem veure tota la informació sobre aquestes dades al següent enllaç: (<https://cimcb.github.io/MetabWorkflowTutorial/Tutorial1.html>)
+
+El document té dues fulles, la primera conté la concentració de 149 metabòlits (columnes) i 4 columnes inicials: índex, SampleID, SampleType (si són mostres reals o Pooled QC) i la classe (el diagnòstic dels individus, GC = Gastric Cancer , BN = Benign Tumor , HE = Healthy Control).
+
+Per fer el SummarizedExperiment necessitem una "expression matrix" (**assay**), una taula per descriure les mostres (**sample metadata slot o ColData**) i la taula que descrigui les dades (gens, metabòlits,...) (**features metadata o RowData**). Podem trobar-ne un exemple a: <https://uclouvain-cbio.github.io/bioinfo-training-02-rnaseq/summarizedexperiments.html>
+
+```{r}
+# Importem l'arxiu excel:
+
+library(readxl)
+GastricCancer_NMR <- read_excel("metaboData-main/metaboData-main/Datasets/2023-CIMCBTutorial/GastricCancer_NMR.xlsx")
+View(GastricCancer_NMR)
+
+
+
+# Com ens diu en la web que descriu dataset, carreguem cadascun dels dos fulls d'excel en dues variables diferents (però ho fem en R):
+
+# Carreguem la primera fulla (Data):
+data <- read_excel("metaboData-main/metaboData-main/Datasets/2023-CIMCBTutorial/GastricCancer_NMR.xlsx", sheet = "Data")
+
+# Carreguem la segona fulla (Peak):
+peak <- read_excel("metaboData-main/metaboData-main/Datasets/2023-CIMCBTutorial/GastricCancer_NMR.xlsx", sheet = "Peak")
+
+```
+
+#### Creació de la "Expression Matrix"
+
+Visualitzant l'arxiu veiem que ens interessen les columnes de la 5 a la 153 (ja que són les que contenen els metabòlits). Seleccionem de "data" aquestes columnes i, amb %\>% ho passem a as.matrix() per tenir-lo en forma de matriu necessària.
+
+```{r}
+
+# Construïm la matriu a partir del dataframe "data" selecccionant les columnes que ens interessen:
+count_matrix <- data[, 5:153] %>%
+  as.matrix()
+
+# Transposem la matriu, això ho fem perquè a la matriu les columnes corresponen a cada mostra mentre que al data frame la disposició era al revès, amb les mostres ordeandes per files.
+count_matrix = t(count_matrix)
+
+# Podem afecgir el nom de les files agafant el propi Sample ID de "data" i així els fem coincidir.
+colnames(count_matrix) <- data$SampleID
+
+# Mirem uns quants registres per veure si l'estructura de la matriu és la que esperem
+count_matrix[1:10, 1:10]
+
+# Com podem veure, tenim tots els metabòlits organitzats en files i les mostres són les columnes. 
+
+
+```
+
+#### Creació de la taula amb les dades de la mostra, el que seria el ColData:
+
+Ara necessitem les dades addicionals sobre les mostres, és a dir, les descripcions d'aquestes que es troben a les columnes SampleID, SampleType i Class.
+
+```{r}
+# Seleccionem del data.frame "data" les columnes que necessitem emprant %>% i la funció select():
+sample_metadata <- data %>%
+  select(SampleID, SampleType, Class) 
+
+rownames(sample_metadata) <- data$SampleID
+
+# Veiem com queda la taula (que només ha de tenir 3 columnes)
+head(sample_metadata)
+
+# Com podem comprovar, les files d'aquesta taula corresponen a les columnes de la matriu anterior.
+```
+
+#### Creació de la taula amb les dades de les característiques (RowData):
+
+Podem trobar les dades de les característiques per obtenir la part RowData del SummarizedExperiment al full dos del fitxer .xlsx (Peak), on tenim les columnes: Label (el nom de cada metabòlit), Name (el nom dels metabòlits donat a la capçalera de la taula "Data", és a dir M1, M2, etc.), Perc_missing (% de missing data de cada metabòlit en el conjunt de mostres), QC_RSD (quality score dels metabòlits comparats entre totes les mostres). Fem com hem fet abans:
+
+```{r}
+#sleccionem totes les columnes (menys la primera, índex, que no aporta res)
+metabolite_metadata <- peak %>%
+  select(Label, Name, Perc_missing, QC_RSD) %>%
+  as.data.frame()
+
+# Fem que les files tinguin el mateix nom que a la matriu (és a dir el Name)
+rownames(metabolite_metadata) <- metabolite_metadata$Name
+
+# Consultem com queda la taula
+head(metabolite_metadata)
+
+# Com podem veure, les files d'aquesta taula corresponen a les files de la matriu.
+
+head(rownames(metabolite_metadata))
+head(rownames(count_matrix))
+head(rownames(sample_metadata))
+```
+
+Verifiquem que les mides siguen correctes:
+
+```{r}
+dim(count_matrix)           
+dim(sample_metadata)        
+dim(metabolite_metadata)    
+```
+
+#### Creació del contenidor SummarizedExperiment:
+
+Ara, amb tots tres elements podem fer l'objecte SummarizedExperiment en combinar-los de la següent manera:
+
+```{r}
+
+# Seguint la idea que les columnes de la matriu corresponen a les files del Coldata (sample_metadata) i que les files de la matriu corresponen a les files del Rowdata (metabolite_metadata) fem la següen verificació abans de continuar: 
+stopifnot(all(colnames(count_matrix) == rownames(sample_metadata)))
+stopifnot(all(rownames(count_matrix) == rownames(metabolite_metadata)))
+
+# Construïm el contenidor amb els tres elements:
+se <- SummarizedExperiment(assays = list(counts = count_matrix),
+                           colData = sample_metadata,
+                           rowData = metabolite_metadata)
+
+# Visualitzem les característiques del contenidor
+se
+
+# El podem veure amb detall emprant diferents funcions:
+#head(assay(se))
+#colData(se)
+#head(rowData(se))
+
+```
+
+#### Guardar el contenidor en format binari .Rda:
+
+Seguin l'exemple d'aquest enllaç podem guardar el contenidor en un arxiu a part: \### Guardar el contenidor en format .Rda
+
+<https://www.bioconductor.org/packages//release/bioc/vignettes/recountmethylation/inst/doc/exporting_saving_data.html>
+
+```{r}
+
+save(se, file = "C:/Users/dvd93/OneDrive/Escritorio/MÁSTER 2/ANÀLISI DE DADES ÒMIQUES/PAC 1/contenidor.rda")
+```
+
+#### Creació del repositori a Github:
+
+## Resultats
+
+Ara que ja tenim les dades podem començar a treballar-hi. Podem
+
+### Anàlisi estadístic de les dades
+
+Ara amb les dades guardades ja hi podem treballar. En aquest cas, per centrar-me en un cas més concret, m'interessa veure la relació entre el grup d'individus amb càncer gàstric (els que tenen la classe "GC") en relació als sans (amb la classe "HE"). Per fer-ho, podem crear un subset del SummarizedExperiment, una de les avantages que té aquest tipus d'objecte. L'anomenem "se_gc":
+
+#### Subset i processat de les dades:
+
+```{r}
+# Generem un subset del SummarizedExperiment complet "se" per quedar-nos amb els individus de càncer gàstric i els sans, per analitzar-los.
+
+se_gc <- se[, se$Class %in% c("GC", "HE")] 
+
+#amb %in% podem seleccionar els que compleixin que a Class tenen els valors indicats https://rsanchezs.gitbooks.io/rprogramming/content/chapter9/filter.html
+
+
+
+# Tal com s'indica en la web del dataset, se'ns recomana eliminar tots els metabòlits amb % de missing values elevat (no interessen els >10%) i tots els que tinguin una valor de qualitat QC_RSD major a 20. Per eliminar aquests metabòlits hem d'anar al rowData per filtrar a partir del que seria la taula de "features metadata".
+
+se_gc <- se_gc[rowData(se_gc)$Perc_missing < 10 & rowData(se_gc)$QC_RSD < 20, ]
+
+# Per últim, hem d'eliminar tots el valors nuls que hi poden haver ja que ens poden afectar als anàlisis i provocar errors. Per fer-ho eliminem les mostres (columnes) amb valors nuls. La idea és accedir a la matriu, mirar amb is.na si hi ha valors nuls i comptar-los amb colSum(). Si n'hi ha serà diferent a 0 i es posarà False i si no n'hi ha serà True. Així tindrem un vector amb Trues i Falses i el podem fer servir per filtrar el subset ja que només ens quedarem amb les columnes amb True. La idea es pot consultar en el següent tutorial: https://stackoverflow.com/questions/25188051/using-is-na-in-r-to-get-column-names-that-contain-na-values
+
+
+columnes_utils <- colSums(is.na(assay(se_gc))) == 0
+se_gc <- se_gc[, columnes_utils]
+
+#podem veure com queda accedint a les dades per veure que només tenim els que ens interessen:
+#head(assay(se_gc))
+se_gc  #veiem que se'ns queden 52 metabòlits i 40 mostres i podem treballar de forma més senzilla i neta
+head(colData(se_gc))
+head(rowData(se_gc))
+
+
+```
+
+#### Visualització de les dades i resum
+
+```{r}
+
+# Per algunes funcions de R necessitem que les variables estiguin en les columnes, una cosa que en SummarizedExperiment és al revés. Podem transposar la matriu amb t() accedint a la matriu amb assay(). La guardem en una variable:
+
+matriu = assay(se_gc) # accedim a la matriu amb assay i la guardem en una variable
+matriu_t = t(matriu)  #ara això és la matriu transposada (columnes = metabòlits)
+
+#Podem fer un petit anàlisi amb str. M'he adonat que no donava el resultat esperar i és perquè amb el SummarizedExperiment tenim una matriu, no un dataframe. Podem generar un dataframe per treballar en alguns casos:
+
+se_df <- as.data.frame(matriu_t)  #ara això és un dataframe de la matriu transposta per usar-la en algunes funcions
+
+# Fem dos anàlisis genèrics de les dades amb str i summary
+str(se_df)
+summary(se_df)
+
+```
+
+#### Matriu de covariàncies
+
+```{r}
+
+#Escalem les variables de la matriu centrant a cada columna en la seva mitjana. 
+matriu_t_scale <- scale(matriu_t, center = TRUE, scale = FALSE)
+
+# Calcula la media de cada columna (es decir, de cada variable):
+# Podem fer na.rm = True per obviar els valors nuls) https://www.datacamp.com/tutorial/na-rm-in-r 
+apply(matriu_t_scale, 2, mean)
+
+```
+
+Ara, amb les dades centrades de matriu_t_scale podem fer la matriu de covariàncies. Primer necessitem calcular el valor de n, que correspon al número de mostres (com hem vist abans quedava a 40 després d'eliminar els valors nuls).
+
+```{r}
+dim(se_df)
+dim(matriu_t_scale)
+```
+
+```{r}
+
+# calculem la matriu de variàncies:
+
+n<- dim(se_df)[1]
+S<-cov(matriu_t_scale)*(n-1)/n
+
+#Donat a la grandària de la matriu, comento la línia per no donar la sortida massa llarga.
+#show(S)
+```
+
+#### Matriu de correlacions
+
+Ara, podem, amb les mateixes dades, calcular la matriu de correlacions per veure com es relacionen els diferents metabòlits entre sí.
+
+```{r}
+R<-cor(matriu_t_scale)
+
+#De la mateixa forma, comento la línia per evitar que es vegi una matriu massa llarga a l'informe. 
+#show(R)
+```
+
+### Anàlisi de les components principals (PCA)
+
+#### Calculem les components principals a partir de diagonalització de la matriu de covariàncies
+
+```{r}
+EIG <- eigen(S)
+#Ho podem veure tot amb show pero comento la línia per evitar una sortida massa llarga
+#show(EIG)
+
+#Individualment podem veure els valors:
+EIG$values
+
+# I els vectors (la primera part amb head)
+head(EIG$vectors)
+```
+
+Ara, tenim els 52 vectors, que corresponen a les components. Aquests vectors corresponen a les coordenades de les compoments principals i podem usar-los per multiplicar la matriu original amb les dades ja centrades (en el nostre cas anomenada matriu_t_scale) per fer la transformació asociada a les components principals:
+
+```{r}
+
+#accedim als vectors Eigen i els emmagatzamem en una nova variable:
+eigenVectors <- EIG$vectors
+
+#transformem la matriu original multiplicant-hi els vectors:
+PCAS1 <- matriu_t_scale %*% eigenVectors
+
+# Mirem com ha quedat:
+#head(PCAS1)
+
+```
+
+Podem representar com es relacionen les mostres en funció de les dues primeres components (és a dir, les que tenen major impacte en la variabilitat). Podem fer un plot on veiem la posició dels punts sobre els eixos de cada component. Podem afegir més informació visual si calculem el percentatge de la variabilitat explicada per cada component així com si separem per colors les mostres de cada grup (GC i HE).
+
+Podem saber el percentatge de variabilitat explicat per cada component si accedim als valors de l'objecte EIG (de l'anàlisi Eigen) i dividim cadascun per la suma del total:
+
+```{r}
+#accedim als valors i en fem els %:
+eigenValors <- EIG$values/sum(EIG$values)
+
+#arrodonim a 3 decimals:
+round(eigenValors, 3)
+
+#podem veure com el primer component explica el 71.7% de la variabilitat mentre que els segon ho fa en un 13.7%. 
+
+
+## VISUALITZACIÓ DEL PLOT DELS 2 PRIMERS PCs:
+
+# Podem fer servir aquests valors per afegirlos al gràfic com etiquetes de cada eix (que afegirem després al plot:
+
+xlabel = paste("PCA1 ", round(eigenValors[1]*100, 2),"%" )
+ylabel = paste("PCA2 ", round(eigenValors[2]*100,2), "%")
+
+# Ara volem separar les mostres pels dos grups (GC i HE) amb colors diferents:
+
+#Seleccionem les dues classes que podem obtenir del colData del contenidor:
+classe <- colData(se_gc)$Class 
+
+colClass <- ifelse(classe == "GC", "red", "blue")
+pchClass <- ifelse(classe == "GC", 1, 2)
+
+
+#Expressem el plot per veure els diferents punts de cada grup (el vermell per GC i el blau pel HE)
+plot(PCAS1[, 1], PCAS1[, 2], main = "Metabòlits. 2 primeres Components Principals", xlab=xlabel, ylab=ylabel, pch = pchClass, col = colClass, bg = colClass)
+```
+
+#### Interpretació de les components:
+
+Un cop hem fet l'anàlisi de les components a partir de la diagonalització de la matriu de covariàncies, hem obtingut els diferents vectors. Quan fem EIG \<- eigen(S) i després show(EIG) podem veure tots els vectors en forma de matriu. La primera columna correspon a la primera component principal, la segona a la segona component i així successivament. Per altra banda, cada fila correspondrà als valors dels coeficients per a cada variable, en el mateix ordre (els metabòlits M4, M5, M7, etc.). Llavors, podem descriure les compoments segons les equacions que queden de cada producte de coeficient\* variable.
+
+Podem calcular les compoments principals amb la funció prcomp (pricomp no em deixa perquè tenim més variables que mostres i no ho accepta):
+
+```{r}
+# funció prcomp per calcular les components principals:
+PCAS2 <- prcomp(matriu_t_scale)
+names(PCAS2)
+```
+
+```{r}
+# podem mirar algunes dades com la desviació estandar:
+PCAS2$sdev
+
+```
+
+```{r}
+#Mirem els scores que estan a x:
+#head(PCAS2$x)
+
+```
+
+Amb rotation podem accedir a cada columna o vector i veure els coeficients per a cada variable, és a dir, el seu pes. Com més gran sigui el seu valor absolut major és el seu pes en explicar la variabilitat.
+
+```{r}
+# Accedim a la primera component (primer vector o primera columna):
+PCAS2$rotation[,1]
+coeficients = PCAS2$rotation[,1]
+
+#ordenem decreixentment en valor absolut per veure els coeficients més alts i trobar-los
+ordenats <- coeficients[order(abs(coeficients), decreasing = TRUE)]
+cat("\n coeficients de major a menor", ordenats)
+
+```
+
+Podem veure com els metabòlits M48 (amb un coeficient de -0.9012062036), el M45 (amb -0.3752120587) i el M66 (0.1438895642) són els que més expliquen la primera component.
+
+```{r}
+# Accedim a la segona component(:
+PCAS2$rotation[,2]
+coeficients2 = PCAS2$rotation[,2]
+
+#ordenem decreixentment per veure els coeficients més alts i trobar-los
+ordenats2 <- coeficients2[order(abs(coeficients2), decreasing = TRUE)]
+cat("\n coeficients de major a menor", ordenats2)
+```
+
+En quant a la segona component la que més pes té és la M66 (amb un coeficient de 0.840941034), seguit de M45 (-0.418359274) o de M129 (0.216154290).
+
+## Discussió
+
+L'anàlisi principal d'aquest estudi ha sigut un anàlisi de les components principals (PCA). L'avantatge d'aquest tipus d'anàlisi és que permet estudiar alhora conjunts de dades multivariants i permet reduir la dimensionalitat (un dels problemes de les dades òmiques) ja que redueix la complexitat en centrar-se un les components que millor expliquen la variabilitat de les dades.
+
+En aquest cas s'han mirat les dues primeres components que juntes expliquen el 85.43% de la variabilitat de les dades de les mostres (71.96% i 13.74% respectivament).
+
+A més, com es pot graficar, ens permet veure si hi ha agrupaments entre les diferents classes. En el nostre cas, treballàvem amb les classes GC (càncer gàstric) i HE (sans). Podem veure, en el gràfic, com hi ha algunes agrupacions similars en la mateixa regió, cosa que indica que alguns metabòlits no mostren diferències entre els dos grups (sans i amb càncer). No obstant, també podem veure punts de colors diferents (grups diferents), completament separats, el que indica que alguns metabòlits sí que tenen un impacte gran en la variabilitat dels dos grups de mostres de l'estudi.
+
+Això es pot veure posteriorment amb les dades dels coeficients que s'obtenen del rotation de la funció prcomp de l'anàlisis PCA. Podem veure com per a la primera component el metabòlit M48 (Creatinina), el M45 (citrat) i en menor grau el M66 (Hippurat) poden jugar un paper clau en les diferències observats entre els grups dels pacients de càncer i el sans. En la segona component, menys explicativa, hi torna a aparèixer entre els valors més alts el M45 amb signe negatiu igualment però el més alt és el M66 (amb signe positiu). A part, apareix d'entre els més alts el M129 (u11).
+
+No obstant, les diferències entre les dues components pot indicar que els patrons que hi ha darrera d'aquestes dades són complexos. No obstant, tenim diversos metabòlits que poden ser d'interès de cara a explicar les diferències com la Creatinina, el citrat i el Hippurat.
+
+Caldria fer més anàlisis partint d'aquests metabòlits o dels que tenen majors impactes en la variabilitat per estudiar millor les diferències entre el grup de càncer gàstric i el grup d'individus sans.
+
+Es podrien fer a més proves estadístiques com ANOVa o t-test per valorar les diferències significatives entre els grups diferents.I acompanyar les dades inicials amb gràfics que ajudin a visualitzar millor les distribució de les dades (que m'ha faltat per temps).
+
+Per altra banda, cal comentar un aspecte important i és que donat al fet que hi havia molts valors nuls, durant el processat de les dades s'han eliminat nombroses mostres quedant-nos amb 40. Això té un efecte molt important sobre els anàlisis i s'ha de tenir en consideració ja que s'ha perdut molta informació i pot alterar les valoracions finals. Una bona pràctica, en comptes d'eliminar els valors que faltaven, hagués sigut imputar-los, tal com s'aconsella al propi web del dataset <https://cimcb.github.io/MetabWorkflowTutorial/Tutorial1.html>).
+
+
+## Enllaç per accedir al repositori Github
+
+https://github.com/davidfernandez9390/Fernandez-Lopez-David-PEC1.git
